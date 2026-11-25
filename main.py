@@ -1,8 +1,26 @@
 import json
 import time
 
+# 허용오차(epsilon) 기준: 부동소수점 미세 오차 보정용
+EPSILON = 1e-9
+
+# 표준 라벨 정규화 맵 (새 라벨 추가 시 이 매핑 테이블에 키-표준라벨 쌍을 추가)
+LABEL_MAP = {
+    "+": "Cross",
+    "cross": "Cross",
+    "Cross": "Cross",
+    "x": "X",
+    "X": "X",
+}
+
 
 def mac_operation(pattern, filt):
+    """
+    MAC(Multiply-Accumulate) 연산 함수
+    - 해석 기준: 반환되는 MAC 점수가 높을수록(더 큰 값일수록) 입력 패턴과 필터의 형태가 더 유사함(일치성이 높음)을 의미합니다.
+    - 근거: 같은 위치의 원소끼리 곱할 때 두 배열이 모두 활성(1)인 일치 위치에서만 1*1=1이 누적되고,
+      불일치 위치(1*0, 0*1, 0*0)는 0이 되어 점수에 기여하지 않으므로 겹치는 칸이 많을수록 점수가 커집니다.
+    """
     n = len(pattern)
     total = 0.0
     for r in range(n):
@@ -12,7 +30,12 @@ def mac_operation(pattern, filt):
 
 
 def compare_scores(score_a, score_b, label_a, label_b):
-    if abs(score_a - score_b) < 1e-9:
+    """
+    허용오차(epsilon) 기반 두 필터의 MAC 점수 비교 함수
+    - MAC 점수는 높을수록 유사도가 높으므로, 더 큰 점수를 가진 필터의 라벨을 반환합니다.
+    - 두 점수의 차이가 EPSILON(1e-9) 미만이면 동점('UNDECIDED')으로 판정합니다.
+    """
+    if abs(score_a - score_b) < EPSILON:
         return "UNDECIDED"
     elif score_a > score_b:
         return label_a
@@ -40,12 +63,10 @@ def input_matrix_3x3(title):
 
 
 def normalize_label(label):
-    if label == "+" or label == "cross" or label == "Cross":
-        return "Cross"
-    elif label == "x" or label == "X":
-        return "X"
-    else:
-        return label
+    """라벨 정규화 함수: LABEL_MAP을 통해 원시 라벨('+', 'cross', 'x' 등)을 표준 라벨('Cross', 'X')로 변환"""
+    if label in LABEL_MAP:
+        return LABEL_MAP[label]
+    return label
 
 
 def measure_performance(sizes):
@@ -76,11 +97,15 @@ def run_mode_1():
 
     result = compare_scores(score_a, score_b, "A", "B")
 
-    print("\n=== 모드 1 판정 결과 ===")
+    print("\n=== 모드 1 판정 결과 (MAC 점수가 높을수록 유사함) ===")
     print("필터 A 점수:", score_a)
     print("필터 B 점수:", score_b)
     print(f"연산 시간: {elapsed_ms:.6f} ms")
     print("판정 결과:", result)
+    if result == "UNDECIDED":
+        print("[모드 1 동점 안내] 두 필터의 MAC 점수가 동일(차이 < 1e-9)하여 판정 불가(UNDECIDED)입니다. 변별력 있는 필터나 패턴으로 다시 실행해 재입력해 주세요.")
+    else:
+        print(f"[점수 해석] 필터 {result}의 MAC 점수가 더 높으므로 입력 패턴은 필터 {result}와 더 유사합니다.")
 
     measure_performance([3])
 
@@ -93,7 +118,7 @@ def run_mode_2():
     pass_count = 0
     fail_list = []
 
-    print("\n=== data.json 일괄 판정 ===")
+    print("\n=== data.json 일괄 판정 (MAC 점수가 높을수록 해당 필터와 유사) ===")
     for key in data["patterns"]:
         total_count += 1
         parts = key.split("_")
@@ -138,7 +163,10 @@ def run_mode_2():
             score_x = mac_operation(pattern, filt_x)
             pred = compare_scores(score_cross, score_x, "Cross", "X")
 
-            if pred == expected:
+            if pred == "UNDECIDED":
+                status = "FAIL"
+                fail_list.append(key + f": 동점 자동 UNDECIDED 처리로 인한 자동 FAIL (expected={expected})")
+            elif pred == expected:
                 status = "PASS"
                 pass_count += 1
             else:
